@@ -1,20 +1,57 @@
 package blogposts
 
 import (
+	"errors"
+	"io"
 	"io/fs"
-	"testing/fstest"
 )
 
 type Post struct {
+	Title string
 }
 
-func NewPostsFromFS(filesSystem fstest.MapFS) []Post {
-	dir, _ := fs.ReadDir(filesSystem, ".")
-	var posts []Post
+type StubFailingFS struct {
+}
 
-	for range dir {
-		posts = append(posts, Post{})
+func (s StubFailingFS) Open(name string) (fs.File, error) {
+	return nil, errors.New("oh no, i always fail")
+}
+
+func NewPostsFromFS(fileSystem fs.FS) ([]Post, error) {
+	dir, err := fs.ReadDir(fileSystem, ".")
+
+	if err != nil {
+		return nil, err
 	}
 
-	return posts
+	var posts []Post
+
+	for _, f := range dir {
+		post, err := getPost(fileSystem, f)
+		if err != nil {
+			return nil, err // todo: should we totally fail if one file fails? or just ignore?
+		}
+		posts = append(posts, post)
+	}
+
+	return posts, nil
+}
+
+func GetPost(fileSystem fs.FS, f fs.DirEntry) (Post, error) {
+	postFile, err := fileSystem.Open(f.Name())
+
+	if err != nil {
+		return Post{}, err
+	}
+	defer postFile.Close()
+
+	postData, err := io.ReadAll(postFile)
+
+	if err != nil {
+		return Post{}, err
+	}
+
+	post := Post{Title: string(postData)[7:]}
+	return post, nil
+
 }
